@@ -17,6 +17,7 @@
 package com.android.quickstep.views;
 
 import static androidx.dynamicanimation.animation.DynamicAnimation.MIN_VISIBLE_CHANGE_PIXELS;
+import static android.provider.Settings.System.SWIPE_DOWN_TO_CLEAR_ALL_RECENTS;
 import static com.android.launcher3.BaseActivity.STATE_HANDLER_INVISIBILITY_FLAGS;
 import static com.android.launcher3.InvariantDeviceProfile.CHANGE_FLAG_ICON_PARAMS;
 import static com.android.launcher3.LauncherAnimUtils.SCALE_PROPERTY;
@@ -48,6 +49,7 @@ import android.animation.ValueAnimator;
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.content.ComponentName;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Canvas;
@@ -59,6 +61,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
+import android.provider.Settings;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -190,6 +193,8 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
     private boolean mOverlayEnabled;
     private boolean mFreezeViewVisibility;
 
+    private final Context mContext;
+
     /**
      * TODO: Call reloadIdNeeded in onTaskStackChanged.
      */
@@ -320,6 +325,8 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
         super(context, attrs, defStyleAttr);
         setPageSpacing(getResources().getDimensionPixelSize(R.dimen.recents_page_spacing));
         setEnableFreeScroll(true);
+
+        mContext = context;
 
         mFastFlingVelocity = getResources()
                 .getDimensionPixelSize(R.dimen.recents_fast_fling_velocity);
@@ -1057,7 +1064,7 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
         }
     }
 
-    private void addDismissedTaskAnimations(View taskView, AnimatorSet anim, long duration) {
+    private void addDismissedTaskAnimations(View taskView, AnimatorSet anim, long duration, boolean goingUp) {
         addAnim(ObjectAnimator.ofFloat(taskView, ALPHA, 0), duration, ACCEL_2, anim);
         if (QUICKSTEP_SPRINGS.get() && taskView instanceof TaskView)
             addAnim(new SpringObjectAnimator<>(taskView, VIEW_TRANSLATE_Y,
@@ -1066,8 +1073,14 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
                             0, -taskView.getHeight()),
                     duration, LINEAR, anim);
         else {
-            addAnim(ObjectAnimator.ofFloat(taskView, TRANSLATION_Y, -taskView.getHeight()),
+            if (goingUp) {
+                addAnim(ObjectAnimator.ofFloat(taskView, TRANSLATION_Y, -taskView.getHeight()),
+                        duration, LINEAR, anim);
+            } else if (getSwipeForClearAllState()) {
+                addAnim(ObjectAnimator.ofFloat(taskView, TRANSLATION_Y, taskView.getHeight()),
                     duration, LINEAR, anim);
+            }
+
         }
     }
 
@@ -1115,7 +1128,7 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
             View child = getChildAt(i);
             if (child == taskView) {
                 if (animateTaskView) {
-                    addDismissedTaskAnimations(taskView, anim, duration);
+                    addDismissedTaskAnimations(taskView, anim, duration, true);
                 }
             } else {
                 // If we just take newScroll - oldScroll, everything to the right of dragged task
@@ -1213,7 +1226,7 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
 
         int count = getTaskViewCount();
         for (int i = 0; i < count; i++) {
-            addDismissedTaskAnimations(getTaskViewAt(i), anim, duration);
+            addDismissedTaskAnimations(getTaskViewAt(i), anim, duration, false);
         }
 
         mPendingAnimation = pendingAnimation;
@@ -1841,5 +1854,10 @@ public abstract class RecentsView<T extends BaseActivity> extends PagedView impl
     private boolean isExtraCardView(View view, int index) {
         return !(view instanceof TaskView) && !(view instanceof ClearAllButton)
                 && index <= mTaskViewStartIndex;
+    }
+
+    public boolean getSwipeForClearAllState() {
+        return Settings.System.getInt(mContext.getContentResolver(),
+                SWIPE_DOWN_TO_CLEAR_ALL_RECENTS, 1) == 1;
     }
 }
